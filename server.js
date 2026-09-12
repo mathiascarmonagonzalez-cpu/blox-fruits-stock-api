@@ -14,11 +14,22 @@ const PRICES = { 'Rocket': 50000, 'Spin': 75000, 'Blade': 100000, 'Spring': 1500
 
 async function getStock() {
   try {
-    const res = await axios.get('https://api.bloxstocks.com/stock', { timeout: 10000 });
-    return res.data;
+    const res = await axios.get('https://fruityblox.com/api/stock', { timeout: 10000 });
+    const d = res.data;
+    // fruityblox devuelve diferente, lo normalizamos
+    return {
+      normal: d.stock? d.stock.normal || d.stock || [] : d.normal || [],
+      mirage: d.stock? d.stock.mirage || [] : d.mirage || []
+    };
   } catch (e) {
-    console.log('Error API:', e.message);
-    return null;
+    console.log('Error API fruityblox:', e.message);
+    try {
+      const res2 = await axios.get('https://api.josh-leonard.com/stock', { timeout: 10000 });
+      return res2.data;
+    } catch (e2) {
+      console.log('Error API 2:', e2.message);
+      return null;
+    }
   }
 }
 
@@ -30,12 +41,12 @@ async function sendDiscord(data) {
     const normal = data.normal || [];
     const mirage = data.mirage || [];
     const embed = new EmbedBuilder()
-     .setTitle('🍈 Blox Fruits Stock')
-     .setColor(0x00FF00)
-     .setTimestamp()
-     .setDescription(`**Normal Stock:**\n${normal.map(f => `• ${f.name} - $${(PRICES[f.name]||0).toLocaleString()}`).join('\n') || 'Vacío'}\n\n**Mirage Stock:**\n${mirage.map(f => `• ${f.name} - $${(PRICES[f.name]||0).toLocaleString()}`).join('\n') || 'Vacío'}`);
+    .setTitle('🍈 Blox Fruits Stock')
+    .setColor(0x00FF00)
+    .setTimestamp()
+    .setDescription(`**Normal Stock:**\n${normal.map(f => `• ${f.name || f} - $${(PRICES[f.name || f]||0).toLocaleString()}`).join('\n') || 'Vacío'}\n\n**Mirage Stock:**\n${mirage.map(f => `• ${f.name || f} - $${(PRICES[f.name || f]||0).toLocaleString()}`).join('\n') || 'Vacío'}`);
     await channel.send({ embeds: [embed] });
-    console.log('Stock enviado');
+    console.log('Stock enviado a Discord');
   } catch (e) { console.log('Error Discord:', e.message); }
 }
 
