@@ -1,58 +1,46 @@
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
+const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, SlashCommandBuilder } = require('discord.js');
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.use(cors());
-
-let cache = { normal: [], mirage: [], updated: null };
-
+let cache = { normal: [], mirage: [], updated: new Date() };
 async function fetchStock(){
-  try{
-    // API publica que si funciona 24/7
-    const urls = [
-      'https://api.blox-fruits.com/v1/stock',
-      'https://fruityblox.com/api/stock',
-      'https://api.vuleng.com/blox-fruits/stock'
-    ];
-    for(let url of urls){
-      try{
-        const { data } = await axios.get(url, { timeout: 8000, headers: {'User-Agent':'Mozilla/5.0'} });
-        if(data && (data.normal || data.stock || data.data)){
-          return data;
-        }
-      }catch(e){ continue; }
-    }
-    // fallback datos de ejemplo si todo falla
-    return { normal: ['Flame','Ice','Sand'], mirage: ['Light','Buddha','Shadow'] };
-  }catch(e){ return { error: e.message }; }
+  const urls = ['https://api.blox-fruits.com/v1/stock','https://fruityblox.com/api/stock'];
+  for(let url of urls){
+    try{
+      const {data} = await axios.get(url,{timeout:5000});
+      if(data){
+        cache.normal = data.normal || data.stock || [];
+        cache.mirage = data.mirage || [];
+        cache.updated = new Date();
+        return cache;
+      }
+    }catch(e){}
+  }
 }
-
-app.get('/', async (req,res)=>{
-  res.send(`
-  <html><head><meta name="viewport" content="width=device-width"><title>Blox Stock VIVO 24/7</title></head>
-  <body style="font-family:sans-serif;padding:20px">
-  <h1>Blox Fruits Stock VIVO 24/7</h1>
-  <p>Actualizado: ${new Date().toLocaleString('es-CO')} - Auto recarga 30s</p>
-  <div id="stock">Cargando stock...</div>
-  <p><a href="/api/bloxfruits/stock">Ver JSON API</a></p>
-  <script>
-    async function load(){
-      try{
-        const r = await fetch('/api/bloxfruits/stock');
-        const j = await r.json();
-        document.getElementById('stock').innerHTML = '<pre>'+JSON.stringify(j,null,2)+'</pre>';
-      }catch(e){ document.getElementById('stock').innerHTML = 'Error '+e }
-    }
-    load(); setInterval(load,30000);
-  </script>
-  </body></html>`);
+fetchStock();
+setInterval(fetchStock, 1000*60*5);
+app.get('/', (req,res)=>res.send('API + BOT Online'));
+app.get('/stock', (req,res)=>res.json(cache));
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+client.once('ready', async ()=>{
+  console.log(`Bot ${client.user.tag} online`);
+  const cmds = [new SlashCommandBuilder().setName('stock').setDescription('Ver stock Blox Fruits').toJSON()];
+  const rest = new REST({version:'10'}).setToken(process.env.TOKEN);
+  await rest.put(Routes.applicationCommands(client.user.id), {body:cmds});
 });
-
-app.get('/api/bloxfruits/stock', async (req,res)=>{
-  const stock = await fetchStock();
-  cache = { ...stock, updated: new Date().toISOString() };
-  res.json(cache);
+client.on('interactionCreate', async i=>{
+  if(!i.isChatInputCommand()) return;
+  if(i.commandName==='stock'){
+    await i.deferReply();
+    await fetchStock();
+    let normal = cache.normal.length? cache.normal.map(f=>`🍎 **${f.name||f.Name}**`).join('\n'):'Vacio';
+    let mirage = cache.mirage.length? cache.mirage.map(f=>`✨ **${f.name||f.Name}**`).join('\n'):'Vacio';
+    const embed = new EmbedBuilder().setTitle('🍈 Blox Fruits Stock').setDescription(`**NORMAL:**\n${normal}\n\n**MIRAGE:**\n${mirage}`).setColor(0x2ECC71);
+    await i.editReply({embeds:[embed]});
+  }
 });
-
-app.listen(PORT, ()=>console.log('LIVE '+PORT));
+if(process.env.TOKEN) client.login(process.env.TOKEN);
+app.listen(PORT, ()=>console.log('Port '+PORT));
