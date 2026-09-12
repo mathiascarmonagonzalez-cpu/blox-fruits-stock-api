@@ -28,6 +28,16 @@ const ROBUX = {
 'Gas':2500,'Spirit':2550,'Tiger':3000,'Yeti':3000,'Magnet':3500,'Kitsune':4000,
 'Control':4000,'Dragon':5000,'Leopard':5000
 };
+const EMOJI = {
+'Rocket':'🚀','Spin':'🌀','Blade':'🗡️','Spring':'🦘','Bomb':'💣','Smoke':'💨',
+'Spike':'🌵','Flame':'🔥','Sand':'🏜️','Ice':'🧊','Dark':'🌑','Diamond':'💎',
+'Light':'💡','Rubber':'🎈','Barrier':'🧱','Ghost':'👻','Magma':'🌋','Quake':'🌊',
+'Buddha':'🧘','Love':'❤️','Creation':'🎨','Spider':'🕷️','Sound':'🎵',
+'Phoenix':'🦅','Portal':'🌀','Lightning':'⚡','Pain':'😣','Blizzard':'❄️',
+'Gravity':'🌌','Mammoth':'🦣','T-Rex':'🦖','Dough':'🍩','Shadow':'👤','Venom':'🐍',
+'Gas':'🟢','Spirit':'🔮','Tiger':'🐯','Yeti':'⛄','Magnet':'🧲','Kitsune':'🦊',
+'Control':'🎮','Dragon':'🐉','Leopard':'🐆'
+};
 const IMPORTANT = ['Buddha','Magnet','Kitsune','Dragon','Control','Leopard','Yeti','Tiger','Spirit','Gas','Venom','Shadow','Dough','Mammoth','T-Rex','Gravity','Love','Spider'];
 
 async function getStockScraping(){
@@ -44,7 +54,6 @@ async function getStockScraping(){
      const name = $(el).text().trim();
      if(BELI[name] &&!all.includes(name)) all.push(name);
    });
-   // Blox Fruits: primeros 6 son Normal, los otros 2 Mirage
    const normal = all.slice(0,6);
    const mirage = all.slice(6,8);
    if(normal.length>0) return {normal, mirage};
@@ -58,24 +67,19 @@ async function sendDiscord(data){
   const ch = await client.channels.fetch(CHANNEL_ID);
 
   const format = (name, stockType) => {
-    const beli = BELI[name]? `$${BELI[name].toLocaleString()}` : '?';
-    const robux = ROBUX[name]? `${ROBUX[name]} Robux` : '?';
-    return `${name} (${beli} - ${robux}) [${stockType}]`;
+    const e = EMOJI[name]||'🍈';
+    return `${e} ${name} ($${BELI[name].toLocaleString()} - ${ROBUX[name]} Robux) [${stockType}]`;
   };
 
   const importantesNormal = data.normal.filter(f=>IMPORTANT.includes(f));
   const importantesMirage = data.mirage.filter(f=>IMPORTANT.includes(f));
-  const comunesNormal = data.normal.filter(f=>!IMPORTANT.includes(f));
-  const comunesMirage = data.mirage.filter(f=>!IMPORTANT.includes(f));
-
   const tieneImportante = importantesNormal.length + importantesMirage.length > 0;
 
-  // MENSAJE PARA IMPORTANTES
   if(tieneImportante){
     for(let fruit of [...importantesNormal,...importantesMirage]){
       const type = data.normal.includes(fruit)? 'Normal' : 'Mirage';
-      const msg = `@everyone **${fruit} en stock** (${BELI[fruit]? `$${BELI[fruit].toLocaleString()} - ${ROBUX[fruit]} Robux` : ''}) [${type}]`;
-      await ch.send({content: msg});
+      const e = EMOJI[fruit]||'🔥';
+      await ch.send({content: `@everyone ${e} **${fruit} en stock** ($${BELI[fruit].toLocaleString()} - ${ROBUX[fruit]} Robux) [${type}] ${e}`});
     }
   }
 
@@ -84,7 +88,7 @@ async function sendDiscord(data){
 .setColor(tieneImportante? 0xFF0000 : 0x00FF00)
 .setTimestamp()
 .setDescription(
-`__**Normal:**__\n${data.normal.map(n=>`• ${format(n,'Normal')}`).join('\n')}\n\n__**Mirage:**__\n${data.mirage.length? data.mirage.map(n=>`• ${format(n,'Mirage')}`).join('\n') : 'Vacío'}`
+`__**☀️ Normal:**__\n${data.normal.map(n=>`• ${format(n,'Normal')}`).join('\n')}\n\n__**🌙 Mirage:**__\n${data.mirage.length? data.mirage.map(n=>`• ${format(n,'Mirage')}`).join('\n') : 'Vacío'}`
 );
 
   await ch.send({embeds:[embed]});
@@ -99,7 +103,7 @@ client.once('ready',()=>{ console.log(`BOT ON`); startLoop(); });
 client.on('clientReady',()=>{ console.log(`BOT ON`); startLoop(); });
 if(DISCORD_TOKEN) client.login(DISCORD_TOKEN);
 
-app.get('/',(req,res)=>res.send('BOT FORMATO NUEVO ON'));
+app.get('/',(req,res)=>res.send('BOT EMOJIS ON'));
 app.get('/test',async(req,res)=>{
  const s=await getStockScraping();
  if(s){ await sendDiscord(s); res.send('Test OK: '+JSON.stringify(s)); }
