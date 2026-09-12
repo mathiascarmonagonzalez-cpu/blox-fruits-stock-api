@@ -3,38 +3,66 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const cors = require('cors');
 const path = require('path');
-const fs = require('fs').promises;
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors())
-app.use(express.static('publc'))
+app.use(cors());
+app.use(express.static('public'));
 
-app.get('/api/bloxfruits/stock', async (req, res) => {
+async function getStock() {
   try {
-    const response = await axios.get('https://fruityblox.com/stock');
-    
-    const $ = cheerio.load(response.data);
+    const { data } = await axios.get('https://fruityblox.com/stock', {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      timeout: 10000
+    });
+    const $ = cheerio.load(data);
+    const fruits = [];
+    // FruityBlox ahora pone las frutas en h3 + imagenes
+    $('h3').each((i, el) => {
+      const name = $(el).text().trim();
+      if(name && name.length < 30 && name.length > 2){
+        fruits.push(name);
+      }
+    });
+    return { rawHtml: data, fruits: [...new Set(fruits)].slice(0,20) };
+  } catch(e) {
+    return null;
+  }
+}
 
-    const fruitElements = $('.row.mb-3.bg-purple.text-light.fw-bold.rounded-2');
+app.get('/', async (req,res)=>{
+  const stock = await getStock();
+  res.send(`
+  <html>
+  <head><meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body{background:#0e0e12;color:#fff;font-family:sans-serif;padding:20px;text-align:center}
+    .card{background:#1e1e24;padding:15px;margin:10px;border-radius:15px}
+    h1{color:#8cff00} .fruit{font-size:18px;padding:6px}
+  </style>
+  </head>
+  <body>
+    <h1>🍇 Blox Fruits Stock VIVO 24/7</h1>
+    <p>Actualizado: ${new Date().toLocaleString('es-CO')} - Medellín</p>
+    <div class="card">
+      <h2>Stock Ahora</h2>
+      ${stock && stock.fruits.length ? stock.fruits.map(f=>`<div class="fruit">🍎 ${f}</div>`).join('') : 'Cargando... espera 10s y recarga'}
+    </div>
+    <p>Tu bot: <b>mathiascarmonagonzalez-cpu/blox-fruits-stock-api</b> funcionando ✅</p>
+    <p>Fuente oficial: fruityblox.com/stock - Se actualiza cada 4h</p>
+    <script>setTimeout(()=>location.reload(), 1000*60*10)</script>
+  </body>
+  </html>
+  `);
+});
 
-    const stock = {};
+app.get('/api/bloxfruits/stock', async (req,res)=>{
+  const s = await getStock();
+  res.json(s || { error: 'FruityBlox no respondió, intenta en 30s' });
+});
 
-    fruitElements.each((index, element) => {
-      const fruitInfo = {};
-
-      const imgSrc = $(element).find('.col-3.d-flex.align-items-center img').attr('src');
-      const name = $(element).find('.col-3.d-flex.align-items-center').eq(1).text().trim();
-      const price = $(element).find('.col-3.d-flex.align-items-center').eq(2).text().trim().replace(/[$]/g, '');
-      const robux = $(element).find('.col-3.d-flex.align-items-center').eq(3).text().trim().replace(/[R]/g, '');
-      const countDown = $('body').find('#countdown').text()
-
-      fruitInfo.imageURL = imgSrc;
-      fruitInfo.name = name;
-      fruitInfo.price = price;
-      fruitInfo.robux = robux;
-
+app.listen(PORT, ()=>console.log('ON '+PORT));
       stock['countdown'] = countDown
       stock[name.toLowerCase()] = fruitInfo;
     });
