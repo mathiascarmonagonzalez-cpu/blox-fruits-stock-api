@@ -8,7 +8,7 @@ const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const CHANNEL_ID = process.env.CHANNEL_ID || '1416563196693794846';
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages] });
 
-const PRICES = {
+const BELI = {
 'Rocket':50000,'Spin':75000,'Blade':100000,'Spring':150000,'Bomb':200000,'Smoke':250000,
 'Spike':350000,'Flame':500000,'Sand':850000,'Ice':1000000,'Dark':1200000,'Diamond':1500000,
 'Light':1800000,'Rubber':2000000,'Barrier':2500000,'Ghost':2800000,'Magma':3200000,'Quake':3500000,
@@ -16,58 +16,93 @@ const PRICES = {
 'Phoenix':15000000,'Portal':18000000,'Lightning':20000000,'Pain':23000000,'Blizzard':25000000,
 'Gravity':2500000,'Mammoth':2700000,'T-Rex':2700000,'Dough':2800000,'Shadow':2900000,'Venom':3000000,
 'Gas':3200000,'Spirit':3400000,'Tiger':5000000,'Yeti':5000000,'Magnet':6000000,'Kitsune':8000000,
-'Control':9000000,'Dragon':15000000
+'Control':9000000,'Dragon':15000000,'Leopard':80000000
 };
+const ROBUX = {
+'Rocket':50,'Spin':75,'Blade':100,'Spring':150,'Bomb':200,'Smoke':250,
+'Spike':350,'Flame':550,'Sand':850,'Ice':1150,'Dark':1200,'Diamond':1200,
+'Light':1700,'Rubber':1200,'Barrier':800,'Ghost':1275,'Magma':1300,'Quake':1500,
+'Buddha':1650,'Love':1700,'Creation':2100,'Spider':1800,'Sound':1900,
+'Phoenix':2000,'Portal':2000,'Lightning':2100,'Pain':2200,'Blizzard':2250,
+'Gravity':2300,'Mammoth':2350,'T-Rex':2350,'Dough':2400,'Shadow':2425,'Venom':2450,
+'Gas':2500,'Spirit':2550,'Tiger':3000,'Yeti':3000,'Magnet':3500,'Kitsune':4000,
+'Control':4000,'Dragon':5000,'Leopard':5000
+};
+const IMPORTANT = ['Buddha','Magnet','Kitsune','Dragon','Control','Leopard','Yeti','Tiger','Spirit','Gas','Venom','Shadow','Dough','Mammoth','T-Rex','Gravity','Love','Spider'];
 
 async function getStockScraping(){
- try{
-  const {data} = await axios.get('https://fruityblox.com/stock',{timeout:20000,headers:{'User-Agent':'Mozilla/5.0'}});
-  const $ = cheerio.load(data);
-  const normal = [];
-  const mirage = [];
-  $('h3').each((i,el)=>{
-    const name = $(el).text().trim();
-    if(PRICES[name]){
-      if(normal.length < 6 &&!normal.includes(name)){
-        normal.push(name);
-      } else if(mirage.length < 4 &&!mirage.includes(name) &&!normal.includes(name)){
-        mirage.push(name);
-      }
-    }
-  });
-  console.log('Scraped:', normal, mirage);
-  if(normal.length>0 || mirage.length>0) return {normal, mirage};
-  return null;
- }catch(e){ console.log('Scrape error', e.message); return null; }
+ const urls = [
+   'https://api.allorigins.win/raw?url=https://fruityblox.com/stock',
+   'https://corsproxy.io/?https://fruityblox.com/stock'
+ ];
+ for(let url of urls){
+  try{
+   const {data} = await axios.get(url,{timeout:25000,headers:{'User-Agent':'Mozilla/5.0'}});
+   const $ = cheerio.load(data);
+   const all = [];
+   $('h3').each((i,el)=>{
+     const name = $(el).text().trim();
+     if(BELI[name] &&!all.includes(name)) all.push(name);
+   });
+   // Blox Fruits: primeros 6 son Normal, los otros 2 Mirage
+   const normal = all.slice(0,6);
+   const mirage = all.slice(6,8);
+   if(normal.length>0) return {normal, mirage};
+  }catch(e){}
+ }
+ return null;
 }
 
 async function sendDiscord(data){
- if(!data) return;
  try{
   const ch = await client.channels.fetch(CHANNEL_ID);
+
+  const format = (name, stockType) => {
+    const beli = BELI[name]? `$${BELI[name].toLocaleString()}` : '?';
+    const robux = ROBUX[name]? `${ROBUX[name]} Robux` : '?';
+    return `${name} (${beli} - ${robux}) [${stockType}]`;
+  };
+
+  const importantesNormal = data.normal.filter(f=>IMPORTANT.includes(f));
+  const importantesMirage = data.mirage.filter(f=>IMPORTANT.includes(f));
+  const comunesNormal = data.normal.filter(f=>!IMPORTANT.includes(f));
+  const comunesMirage = data.mirage.filter(f=>!IMPORTANT.includes(f));
+
+  const tieneImportante = importantesNormal.length + importantesMirage.length > 0;
+
+  // MENSAJE PARA IMPORTANTES
+  if(tieneImportante){
+    for(let fruit of [...importantesNormal,...importantesMirage]){
+      const type = data.normal.includes(fruit)? 'Normal' : 'Mirage';
+      const msg = `@everyone **${fruit} en stock** (${BELI[fruit]? `$${BELI[fruit].toLocaleString()} - ${ROBUX[fruit]} Robux` : ''}) [${type}]`;
+      await ch.send({content: msg});
+    }
+  }
+
   const embed = new EmbedBuilder()
-.setTitle('🍈 Blox Fruits Stock - LIVE')
-.setColor(0x00FF00)
+.setTitle(tieneImportante? '🚨 STOCK IMPORTANTE' : '🍈 Stock Actual')
+.setColor(tieneImportante? 0xFF0000 : 0x00FF00)
 .setTimestamp()
-.setDescription(`**Normal:**\n${data.normal.map(n=>`• ${n} - $${(PRICES[n]||0).toLocaleString()}`).join('\n')||'Vacío'}\n\n**Mirage:**\n${data.mirage.map(n=>`• ${n} - $${(PRICES[n]||0).toLocaleString()}`).join('\n')||'Vacío'}`);
+.setDescription(
+`__**Normal:**__\n${data.normal.map(n=>`• ${format(n,'Normal')}`).join('\n')}\n\n__**Mirage:**__\n${data.mirage.length? data.mirage.map(n=>`• ${format(n,'Mirage')}`).join('\n') : 'Vacío'}`
+);
+
   await ch.send({embeds:[embed]});
-  console.log('Enviado Discord OK');
- }catch(e){ console.log('Discord error', e.message); }
+ }catch(e){ console.log(e.message); }
 }
 
 function startLoop(){
  setInterval(async()=>{ const s=await getStockScraping(); if(s) await sendDiscord(s); }, 4*60*60*1000 + 60000);
  (async()=>{ const s=await getStockScraping(); if(s) await sendDiscord(s); })();
 }
-
-client.once('ready',()=>{ console.log(`BOT ON ${client.user.tag}`); startLoop(); });
-client.on('clientReady',()=>{ console.log(`BOT ON ${client.user.tag}`); startLoop(); });
+client.once('ready',()=>{ console.log(`BOT ON`); startLoop(); });
+client.on('clientReady',()=>{ console.log(`BOT ON`); startLoop(); });
 if(DISCORD_TOKEN) client.login(DISCORD_TOKEN);
 
-app.get('/',(req,res)=>res.send('BOT ON SCRAPER - Magnet OK'));
+app.get('/',(req,res)=>res.send('BOT FORMATO NUEVO ON'));
 app.get('/test',async(req,res)=>{
  const s=await getStockScraping();
  if(s){ await sendDiscord(s); res.send('Test OK: '+JSON.stringify(s)); }
- else res.send('Scraper no encontró nada, reintenta en 2 min');
+ else res.send('No stock');
 });
-app.listen(PORT,()=>console.log(`Web ON ${PORT}`));
+app.listen(PORT,()=>console.log('Web ON'));
