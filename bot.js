@@ -1,72 +1,69 @@
+const http = require('http');
+http.createServer((req, res) => {
+  res.writeHead(200, {'Content-Type': 'text/plain'});
+  res.end('Bot Blox Fruits Alive');
+}).listen(process.env.PORT || 10000, () => console.log("Web server ON"));
+
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 const axios = require('axios');
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-const TOKEN = process.env.DISCORD_TOKEN;
-const CHANNEL_ID = process.env.CHANNEL_ID;
-
-const API_URLS = [
-  "https://api.j3k.app/blox-fruits/stock",
-  "https://blox-fruits-stock-api-umber.vercel.app/api/stock"
-];
-
 async function getStock() {
-  for (const url of API_URLS) {
-    try {
-      console.log(`Probando ${url}`);
-      const res = await axios.get(url, { timeout: 10000 });
-      console.log(`OK con ${url}:`, JSON.stringify(res.data).slice(0,200));
-      return res.data;
-    } catch (e) {
-      console.log(`Fallo ${url}: ${e.message}`);
-    }
+  try {
+    console.log("Probando j3k.app...");
+    const res = await axios.get("https://api.j3k.app/blox-fruits/stock", { timeout: 15000 });
+    console.log("Respuesta API:", JSON.stringify(res.data).slice(0, 500));
+    return res.data;
+  } catch (e) {
+    console.log("Error API j3k:", e.message);
+    return null;
   }
-  return null;
 }
 
-function normalize(data) {
+function parseStock(data) {
   if (!data) return { normal: [], mirage: [] };
-  if (data.normal) return { normal: data.normal, mirage: data.mirage || [] };
-  if (data.normalStock) return { normal: data.normalStock, mirage: data.mirageStock || [] };
+  // Formato j3k nuevo: { normal: [], mirage: [] } o { stock: { normal: [], mirage: [] } }
+  if (data.normal && Array.isArray(data.normal)) return { normal: data.normal, mirage: data.mirage || [] };
   if (data.data && data.data.normal) return { normal: data.data.normal, mirage: data.data.mirage || [] };
-  if (Array.isArray(data)) return { normal: data, mirage: [] };
+  if (data.stock && data.stock.normal) return { normal: data.stock.normal, mirage: data.stock.mirage || [] };
+  if (data.normalStock) return { normal: data.normalStock, mirage: data.mirageStock || [] };
   return { normal: [], mirage: [] };
 }
 
-async function updateStock() {
+async function sendStock() {
   try {
-    const channel = await client.channels.fetch(CHANNEL_ID);
+    const channel = await client.channels.fetch(process.env.CHANNEL_ID);
     const raw = await getStock();
-    const stock = normalize(raw);
+    const stock = parseStock(raw);
 
     const embed = new EmbedBuilder()
       .setTitle('🍈 Blox Fruits Stock')
-      .setColor(0x2bff00)
-      .setTimestamp()
-      .setDescription(`Actualizado <t:${Math.floor(Date.now()/1000)}:R>`);
+      .setColor(0x00FF00)
+      .setTimestamp();
 
-    if (stock.normal.length > 0) {
-      embed.addFields({ name: '📦 Normal Stock', value: stock.normal.map(f => `**${f.name || f.Name}**`).join('\n').slice(0,1024) });
-    }
-    if (stock.mirage.length > 0) {
-      embed.addFields({ name: '🏝️ Mirage Stock', value: stock.mirage.map(f => `**${f.name || f.Name}**`).join('\n').slice(0,1024) });
-    }
-    if (stock.normal.length === 0 && stock.mirage.length === 0) {
-      embed.addFields({ name: 'Error', value: 'APIs caídas, reintentando...' });
+    if (stock.normal.length > 0 || stock.mirage.length > 0) {
+      const normalText = stock.normal.length > 0 ? stock.normal.map(f => `• **${f.name || f.Name || f}** - $${f.price || ''}`).join('\n') : 'Vacío';
+      const mirageText = stock.mirage.length > 0 ? stock.mirage.map(f => `• **${f.name || f.Name || f}**`).join('\n') : 'Vacío';
+      
+      embed.setDescription(`**Normal:**\n${normalText}\n\n**Mirage:**\n${mirageText}`);
+      embed.addFields({ name: '⏰', value: `Actualizado <t:${Math.floor(Date.now()/1000)}:R> - Cada 5 min` });
+    } else {
+      embed.setDescription('No pude leer el stock, pero estoy vivo. Revisa logs.');
+      embed.addFields({ name: 'Raw', value: JSON.stringify(raw).slice(0, 1000) || 'null' });
     }
 
     await channel.send({ embeds: [embed] });
-    console.log('Nuevo mensaje de stock enviado');
+    console.log("Mensaje enviado a Discord");
   } catch (e) {
-    console.log('Error update:', e.message);
+    console.log("Error enviando:", e.message);
   }
 }
 
 client.once('ready', () => {
-  console.log(`Logged in as ${client.user.tag}`);
-  updateStock();
-  setInterval(updateStock, 300000);
+  console.log(`BOT CONECTADO como ${client.user.tag}`);
+  sendStock();
+  setInterval(sendStock, 300000); // 5 min
 });
 
-client.login(TOKEN);
+client.login(process.env.DISCORD_TOKEN);
