@@ -1,46 +1,69 @@
-require('./bot.js');const express = require('express');
+const http = require('http');
+http.createServer((req, res) => {
+  res.writeHead(200, {'Content-Type': 'text/plain'});
+  res.end('Bot Blox Fruits Alive');
+}).listen(process.env.PORT || 10000, () => console.log("Web server ON"));
+
+const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 const axios = require('axios');
-const cors = require('cors');
-const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, SlashCommandBuilder } = require('discord.js');
-const app = express();
-const PORT = process.env.PORT || 3000;
-app.use(cors());
-let cache = { normal: [], mirage: [], updated: new Date() };
-async function fetchStock(){
-  const urls = ['https://api.blox-fruits.com/v1/stock','https://fruityblox.com/api/stock'];
-  for(let url of urls){
-    try{
-      const {data} = await axios.get(url,{timeout:5000});
-      if(data){
-        cache.normal = data.normal || data.stock || [];
-        cache.mirage = data.mirage || [];
-        cache.updated = new Date();
-        return cache;
-      }
-    }catch(e){}
+
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+
+async function getStock() {
+  try {
+    console.log("Probando j3k.app...");
+    const res = await axios.get("https://api.j3k.app/blox-fruits/stock", { timeout: 15000 });
+    console.log("Respuesta API:", JSON.stringify(res.data).slice(0, 500));
+    return res.data;
+  } catch (e) {
+    console.log("Error API j3k:", e.message);
+    return null;
   }
 }
-fetchStock();
-setInterval(fetchStock, 1000*60*5);
-app.get('/', (req,res)=>res.send('API + BOT Online'));
-app.get('/stock', (req,res)=>res.json(cache));
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-client.once('ready', async ()=>{
-  console.log(`Bot ${client.user.tag} online`);
-  const cmds = [new SlashCommandBuilder().setName('stock').setDescription('Ver stock Blox Fruits').toJSON()];
-  const rest = new REST({version:'10'}).setToken(process.env.TOKEN);
-  await rest.put(Routes.applicationCommands(client.user.id), {body:cmds});
-});
-client.on('interactionCreate', async i=>{
-  if(!i.isChatInputCommand()) return;
-  if(i.commandName==='stock'){
-    await i.deferReply();
-    await fetchStock();
-    let normal = cache.normal.length? cache.normal.map(f=>`🍎 **${f.name||f.Name}**`).join('\n'):'Vacio';
-    let mirage = cache.mirage.length? cache.mirage.map(f=>`✨ **${f.name||f.Name}**`).join('\n'):'Vacio';
-    const embed = new EmbedBuilder().setTitle('🍈 Blox Fruits Stock').setDescription(`**NORMAL:**\n${normal}\n\n**MIRAGE:**\n${mirage}`).setColor(0x2ECC71);
-    await i.editReply({embeds:[embed]});
+
+function parseStock(data) {
+  if (!data) return { normal: [], mirage: [] };
+  // Formato j3k nuevo: { normal: [], mirage: [] } o { stock: { normal: [], mirage: [] } }
+  if (data.normal && Array.isArray(data.normal)) return { normal: data.normal, mirage: data.mirage || [] };
+  if (data.data && data.data.normal) return { normal: data.data.normal, mirage: data.data.mirage || [] };
+  if (data.stock && data.stock.normal) return { normal: data.stock.normal, mirage: data.stock.mirage || [] };
+  if (data.normalStock) return { normal: data.normalStock, mirage: data.mirageStock || [] };
+  return { normal: [], mirage: [] };
+}
+
+async function sendStock() {
+  try {
+    const channel = await client.channels.fetch(process.env.CHANNEL_ID);
+    const raw = await getStock();
+    const stock = parseStock(raw);
+
+    const embed = new EmbedBuilder()
+      .setTitle('🍈 Blox Fruits Stock')
+      .setColor(0x00FF00)
+      .setTimestamp();
+
+    if (stock.normal.length > 0 || stock.mirage.length > 0) {
+      const normalText = stock.normal.length > 0 ? stock.normal.map(f => `• **${f.name || f.Name || f}** - $${f.price || ''}`).join('\n') : 'Vacío';
+      const mirageText = stock.mirage.length > 0 ? stock.mirage.map(f => `• **${f.name || f.Name || f}**`).join('\n') : 'Vacío';
+      
+      embed.setDescription(`**Normal:**\n${normalText}\n\n**Mirage:**\n${mirageText}`);
+      embed.addFields({ name: '⏰', value: `Actualizado <t:${Math.floor(Date.now()/1000)}:R> - Cada 5 min` });
+    } else {
+      embed.setDescription('No pude leer el stock, pero estoy vivo. Revisa logs.');
+      embed.addFields({ name: 'Raw', value: JSON.stringify(raw).slice(0, 1000) || 'null' });
+    }
+
+    await channel.send({ embeds: [embed] });
+    console.log("Mensaje enviado a Discord");
+  } catch (e) {
+    console.log("Error enviando:", e.message);
   }
+}
+
+client.once('ready', () => {
+  console.log(`BOT CONECTADO como ${client.user.tag}`);
+  sendStock();
+  setInterval(sendStock, 300000); // 5 min
 });
-if(process.env.TOKEN) client.login(process.env.TOKEN);
-app.listen(PORT, ()=>console.log('Port '+PORT));
+
+client.login(process.env.DISCORD_TOKEN);
