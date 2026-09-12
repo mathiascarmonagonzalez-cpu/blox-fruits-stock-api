@@ -1,4 +1,4 @@
-const express = require('express');
+require('./bot.js');const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
 const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, SlashCommandBuilder } = require('discord.js');
