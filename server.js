@@ -1,39 +1,84 @@
 const express = require('express');
-const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
+const fetch = require('node-fetch');
+const fs = require('fs');
+const path = require('path');
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 
-// --- CONFIG API ORIGINAL + BACKUP ---
-const MAIN_STOCK_URL = "https://api.bloxstocks.com/blox-fruits/stock";
+app.use(express.static('public'));
+app.use(express.json());
 
-app.get('/', (req,res) => {
-  res.send('Bot on backup API - ONLINE ✅');
-});
+let cachedStock = null;
+let lastFetch = 0;
 
-app.get('/api/stock', async (req,res) => {
-  try{
-    const r = await fetch(MAIN_STOCK_URL);
-    const data = await r.json();
-    res.json({ source: 'BACKUP API', data });
-  }catch(e){
-    res.json({ source: 'BACKUP API', data: null, error: 'No se pudo conectar' });
+// 3 APIS diferentes para backup
+const APIS = [
+  'https://fruityblox.com/api/stock',
+  'https://api.torikumu.com/blox-fruits/stock',
+  'https://blox-fruits-api.onrender.com/api/stock'
+];
+
+async function fetchStockWithBackup() {
+  for (let apiUrl of APIS) {
+    try {
+      console.log(`Intentando: ${apiUrl}`);
+      const res = await fetch(apiUrl, { timeout: 8000 });
+      if (!res.ok) throw new Error(`Status ${res.status}`);
+      const data = await res.json();
+      
+      // Si viene de fruityblox viene diferente, normalizamos
+      if (data.normal || data.mirage) {
+        cachedStock = data;
+      } else if (data.stock || Array.isArray(data)) {
+        cachedStock = data;
+      } else {
+        cachedStock = data;
+      }
+      
+      lastFetch = Date.now();
+      console.log(`Page running on backup OK - Data de: ${apiUrl}`);
+      return cachedStock;
+    } catch (e) {
+      console.log(`Falló ${apiUrl}: ${e.message}`);
+      continue;
+    }
   }
+  console.log("Todas las APIs fallaron, usando cache viejo");
+  return cachedStock;
+}
+
+// Cargar cache viejo del archivo si existe
+try {
+  const dataPath = path.join(__dirname, 'data', 'stock.json');
+  if (fs.existsSync(dataPath)) {
+    cachedStock = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
+  }
+} catch(e) {}
+
+// Ruta principal que usa tu bot
+app.get('/stock', async (req, res) => {
+  if (!cachedStock || Date.now() - lastFetch > 5 * 60 * 1000) {
+    await fetchStockWithBackup();
+  }
+  res.json(cachedStock || { error: "No stock yet, wait 1 min" });
 });
 
-app.listen(PORT, () => console.log('Page running on backup'));
-
-// --- DISCORD BOT ---
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-const CHANNEL_ID = process.env.CHANNEL_ID;
-const TOKEN = process.env.DISCORD_TOKEN || process.env.TOKEN;
-
-client.once('ready', async () => {
-  console.log(`Bot ON: ${client.user.tag} - Bot on backup API`);
-  if(!CHANNEL_ID) return;
-  try{
-    const ch = await client.channels.fetch(CHANNEL_ID);
-    ch.send('✅ **Bot reconectado - Ahora con BACKUP API**');
-  }catch{}
+app.get('/api/stock', async (req, res) => {
+  if (!cachedStock || Date.now() - lastFetch > 5 * 60 * 1000) {
+    await fetchStockWithBackup();
+  }
+  res.json(cachedStock || { error: "No stock yet, wait 1 min" });
 });
 
-if(TOKEN) client.login(TOKEN);
+app.get('/', (req, res) => {
+  res.send(`API Live - Last fetch: ${new Date(lastFetch).toLocaleString()} <br><a href="/stock">Ver /stock</a>`);
+});
+
+// Actualizar cada 4 minutos
+setInterval(fetchStockWithBackup, 4 * 60 * 1000);
+fetchStockWithBackup(); // primera carga
+
+app.listen(PORT, () => {
+  console.log(`Page running on backup - Port ${PORT}`);
+  console.log(`Available at your primary URL https://blox-fruits-stock-api-waea.onrender.com`);
+});
