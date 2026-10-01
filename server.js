@@ -2,44 +2,63 @@ const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-let cache = { normal: ["Rocket","Spin","Smoke"], mirage: ["Light","Ice"], updated: new Date().toISOString(), source: "fallback-init" };
-let last = Date.now();
+let cache = null;
+let last = 0;
 
-async function getStock(){
-  try{
-    console.log("Intentando torikumu...");
-    const r = await fetch('https://api.torikumu.com/stock', {
-      headers: { 'User-Agent': 'Mozilla/5.0' }
-    });
-    const j = await r.json();
-    if(j && (j.normal || j.stock || j.data)){
-      cache = j;
-      last = Date.now();
-      console.log("OK TORIKUMU");
-      return;
-    }
-    throw new Error("formato raro");
-  }catch(e){
-    console.log("Torikumu fallo: "+e.message+" - intentando fruityblox");
-    try{
-      const r2 = await fetch('https://fruityblox.com/api/stock', {
-        headers: { 'User-Agent': 'Mozilla/5.0' }
+async function getRealStock() {
+  const APIS = [
+    'https://blox-fruits-stock-api.vercel.app/api/stock',
+    'https://api.torikumu.com/blox-fruits/stock',
+    'https://fruityblox.com/api/stock'
+  ];
+
+  for (const url of APIS) {
+    try {
+      console.log(`Probando REAL: ${url}`);
+      const res = await fetch(url, {
+        headers: { 
+          'User-Agent': 'Mozilla/5.0',
+          'Accept': 'application/json'
+        }
       });
-      const j2 = await r2.json();
-      cache = j2;
-      last = Date.now();
-      console.log("OK FRUITYBLOX");
-    }catch(e2){
-      console.log("Ambas fallaron, mantengo cache viejo: "+e2.message);
+      if (!res.ok) continue;
+      const data = await res.json();
+      
+      // Si tiene datos validos
+      if (data && (data.normal || data.mirage || data.current || Array.isArray(data))) {
+        cache = data;
+        last = Date.now();
+        console.log(`STOCK REAL OK de ${url}`);
+        console.log(JSON.stringify(data).slice(0, 300));
+        return;
+      }
+    } catch (e) {
+      console.log(`Fallo ${url}: ${e.message}`);
     }
   }
+  console.log("Todas las reales fallaron, mantengo cache anterior");
 }
 
-app.get('/stock', (req,res)=> res.json(cache));
-app.get('/api/stock', (req,res)=> res.json(cache));
-app.get('/', (req,res)=> res.send(`LIVE - Ultima actualizacion: ${new Date(last).toString()}<br><a href="/stock">Ver /stock</a>`));
+app.get('/stock', async (req, res) => {
+  if (!cache) await getRealStock();
+  res.json(cache || { error: "Cargando stock real, refresca en 15s", time: new Date().toISOString() });
+});
 
-setInterval(getStock, 120000);
-getStock();
+app.get('/api/stock', async (req, res) => {
+  if (!cache) await getRealStock();
+  res.json(cache || { error: "Cargando..." });
+});
 
-app.listen(PORT, ()=> console.log('Page running - Port '+PORT));
+app.get('/', (req, res) => {
+  res.send(`
+    <h1>LIVE - Stock REAL</h1>
+    <p>Ultima actualizacion: ${new Date(last).toString()}</p>
+    <a href="/stock">Ver /stock REAL</a>
+    <pre>${JSON.stringify(cache, null, 2).slice(0, 2000)}</pre>
+  `);
+});
+
+setInterval(getRealStock, 2 * 60 * 1000);
+getRealStock();
+
+app.listen(PORT, () => console.log(`Page REAL running - Port ${PORT}`));
